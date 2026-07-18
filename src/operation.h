@@ -45,10 +45,10 @@ void openCSV(hash_header *table) ;
 int initTable(hash_header *table) ;
 int insert(hash_header *table, char *data) ;
 
-int field_from_name(const char *s) ;
-result_set filter(hash_header *t, int field, const char *value) ;
-result_set filter_sort(hash_header *t, int ffield, const char *value, int sfield, int dir) ;
-
+int insert(hash_header *table,char *data) ;
+uint32_t hashing(uint32_t id, int bits) ;
+void search(hash_header *table, int student_id) ;
+void update(hash_header *table, int student_id, const char* field, float new_value) ;
 
 // this allow for all the funcs be declare and define in one .h file
 #if defined(OP_IMPLEMENTATION)
@@ -289,6 +289,53 @@ static void op_filter(hash_header *t)
     print_result(&r) ;
 }
 
+void search(hash_header *table, int student_id) {
+    if (table->capacity == 0 || student_id == 0) {
+        printf("StudentID %d not found.\n", student_id) ;
+        return ;
+    }
+    size_t bits = (size_t)round(log2((double)table->capacity)) ;
+    size_t index = hashing(student_id, (int)bits) ;
+    size_t start = index ;
+
+    while (table->row[index].id != 0) {
+        if (table->row[index].id == student_id) {
+            printf("FOUND: %d, %s, %.2f, %s, %d\n", 
+                   table->row[index].id, table->row[index].name, 
+                   table->row[index].gpa, table->row[index].dept, table->row[index].enroll_y) ;
+            return ;
+        }
+        index = (index + 1) % table->capacity ;
+        if (index == start) break ; // Avoid infinite loops if table fills up completely
+    }
+    printf("StudentID %d not found.\n", student_id) ;
+}
+
+void update(hash_header *table, int student_id, const char *field, float new_value) {
+    if (table->capacity == 0 || student_id == 0) {
+        printf("UPDATE FAILED: Invalid table state.\n") ;
+        return ;
+    }
+    size_t bits = (size_t)round(log2((double)table->capacity)) ;
+    size_t index = hashing(student_id, (int)bits) ;
+    size_t start = index ;
+
+    while (table->row[index].id != 0) {
+        if (table->row[index].id == student_id) {
+            if (field[0] == 'G' || field[0] == 'g') {
+                table->row[index].gpa = new_value ;
+                printf("UPDATED: Student %d GPA updated to %.2f\n", student_id, new_value) ;
+                return ;
+            } else {
+                printf("UPDATE FAILED: Invalid field parameter.\n") ;
+                return ;
+            }
+        }
+        index = (index + 1) % table->capacity ;
+        if (index == start) break ;
+    }
+    printf("UPDATE FAILED: StudentID %d not found.\n", student_id) ;
+    
 static void op_filter_sort(hash_header *t)
 {
     char value[MAX_LINE_LEN], order[16] ;
