@@ -8,10 +8,12 @@ int main(void)
     openCSV(&table) ;
 
     
-    for(size_t i = 0 ;i< 50; i++)
+    for(size_t i = 0 ;i< table.capacity; i++)
     {
-        printf("row %zu: %d:%s\n",i,table.row[i].id,table.row[i].name) ;
+       /*if(table.row[i].id != 0)*/ printf("row %zu: %d:%s %hhu\n",i,table.row[i].id,table.row[i].name,table.row[i].dfh) ;
     }
-        
+    printf("%zu",table.count) ;
+    
+    
     return 0 ;
 }

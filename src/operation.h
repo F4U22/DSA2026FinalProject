@@ -26,6 +26,8 @@ typedef struct {
     float gpa ;
     char dept[MAX_DEPT_LEN] ;
     int enroll_y ;
+    // this is use for robin hood probing 
+    unsigned char dfh ;
 
 } table_row ;
 
@@ -88,30 +90,37 @@ void openCSV(hash_header *table)
     // close the dir when not use :-)
     closedir(dir)  ;
 
+    // let user choose the file and concat the path
     do{
-    scanf("%d",&choice_file) ;
-    }while(choice_file<=0 || choice_file > i) ;
+        printf("Please select the file you want to open by input the number: ") ;
+        scanf("%d",&choice_file) ;
 
+    }while(choice_file<=0 || choice_file > i) ;
     snprintf(fullpath,sizeof(fullpath),"%s%s",path,file_list[choice_file-1]) ;
 
     fs = fopen(fullpath,"r") ;
     if(fs == NULL) printf("no file %s",fullpath) ;
 
-    fgets(read_buff,sizeof(read_buff),fs) ;
-
-    size_t row_counter = 0 ;
-    for(char *data = fgets(read_buff,sizeof(read_buff),fs);data != NULL ; 
-        data = fgets(read_buff,sizeof(read_buff),fs))
+    char *head = fgets(read_buff,sizeof(read_buff),fs) ;
+    if(strncmp(head,"StudentID,Name,GPA,Department,EnrollmentYear\n",strlen(head)) != 0)
     {
-        row_counter++ ;
-        if(insert(table,data) == -1) printf("%zu:Potential missing field\n",row_counter) ;
+        printf("File potentially not in the wanted format check the table head\n") ;
+
+    }else{
+        size_t row_counter = 0 ;
+        for(char *data = fgets(read_buff,sizeof(read_buff),fs);data != NULL ; 
+            data = fgets(read_buff,sizeof(read_buff),fs))
+        {
+            row_counter++ ;
+            if(insert(table,data) == -1) printf("%zu:Potential missing field\n",row_counter) ;
+        }
     }
 
 
+
+    //free both the allocated file list and close the file
     for(size_t i = 0 ; i < MAX_FILE_LEN; i++) free(file_list[i]) ;
-
     fclose(fs) ;
-
 }
 
 int initTable(hash_header *table) 
@@ -119,7 +128,7 @@ int initTable(hash_header *table)
     if(table->capacity == 0) 
     {
         table->capacity = INIT_TABLE_SIZE ;
-        table->row = realloc(table->row,table->capacity*sizeof(*table->row)) ;
+        table->row = calloc(table->capacity,sizeof(*table->row)) ;
     }else{
         return -1 ;
     }
@@ -129,18 +138,41 @@ int initTable(hash_header *table)
 }
 int insert(hash_header *table, char *data)
 {
-    if (table->count >= table->capacity)
+    if (table->count >= (int)(table->capacity*0.7))
     {
         if(table->capacity == 0) table->capacity = INIT_TABLE_SIZE ;
         else table->capacity *= 2 ;
         table->row = realloc(table->row,table->capacity*sizeof(*table->row)) ;
     }
     table_row *temp ;
+
     int err = sscanf(data,"%d,%[a-zA-Z ],%f,%[^,],%d\n",&temp->id,temp->name,&temp->gpa,temp->dept,&temp->enroll_y) ;
     if(err <5) return -1 ;
+    temp->dfh = 0 ;
+
     size_t index = hashing(temp->id,(int)log2f(table->capacity)) ;
-    table->row[index] = *temp ;
-    table->count++ ;
+    
+    for(;;)
+    {
+        if(table->row[index].id != 0) 
+        {
+
+
+            if(table->row[index].dfh < temp->dfh)
+            {
+                table_row exchanger = *temp ;
+                *temp = table->row[index] ;
+                table->row[index] = exchanger ;
+            }
+
+        }else{
+            table->row[index] = *temp ;
+            table->count++ ;
+            break ;
+        }
+        temp->dfh++ ;
+        index = (index + 1) & (table->capacity -1) ;
+    }
 }
 
 uint32_t hashing(uint32_t id,int bits) 
