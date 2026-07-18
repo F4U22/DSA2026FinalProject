@@ -152,39 +152,51 @@ uint32_t hashing(uint32_t id,int bits)
 }
 
 void search(hash_header *table, int student_id) {
-    size_t bits = (size_t)log2f(table->capacity);
-    size_t index = hashing(student_id, bits);
-    size_t start = index;
+    if (table->capacity == 0 || student_id == 0) {
+        printf("StudentID %d not found.\n", student_id) ;
+        return ;
+    }
+    size_t bits = (size_t)round(log2((double)table->capacity)) ;
+    size_t index = hashing(student_id, (int)bits) ;
+    size_t start = index ;
 
     while (table->row[index].id != 0) {
         if (table->row[index].id == student_id) {
-            printf("FOUND: %d, %s, %.2f\n", table->row[index].id, table->row[index].name, table->row[index].gpa);
-            return;
+            printf("FOUND: %d, %s, %.2f, %s, %d\n", 
+                   table->row[index].id, table->row[index].name, 
+                   table->row[index].gpa, table->row[index].dept, table->row[index].enroll_y) ;
+            return ;
         }
-        index = (index + 1) % table->capacity;
-        if (index == start) break;
+        index = (index + 1) % table->capacity ;
+        if (index == start) break ; // Avoid infinite loops if table fills up completely
     }
-    printf("StudentID %d not found.\n", student_id);
+    printf("StudentID %d not found.\n", student_id) ;
 }
 
-void update(hash_header *table, int student_id, const char* field, float new_value) {
-    size_t bits = (size_t)log2f(table->capacity);
-    size_t index = hashing(student_id, bits);
-    size_t start = index;
+void update(hash_header *table, int student_id, const char *field, float new_value) {
+    if (table->capacity == 0 || student_id == 0) {
+        printf("UPDATE FAILED: Invalid table state.\n") ;
+        return ;
+    }
+    size_t bits = (size_t)round(log2((double)table->capacity)) ;
+    size_t index = hashing(student_id, (int)bits) ;
+    size_t start = index ;
 
     while (table->row[index].id != 0) {
         if (table->row[index].id == student_id) {
-            if (strcmp(field, "GPA") == 0) {
-                table->row[index].gpa = new_value;
-                printf("UPDATED: Student %d GPA updated.\n", student_id);
-                return;
+            if (field[0] == 'G' || field[0] == 'g') {
+                table->row[index].gpa = new_value ;
+                printf("UPDATED: Student %d GPA updated to %.2f\n", student_id, new_value) ;
+                return ;
+            } else {
+                printf("UPDATE FAILED: Invalid field parameter.\n") ;
+                return ;
             }
         }
-        index = (index + 1) % table->capacity;
-        if (index == start) break;
+        index = (index + 1) % table->capacity ;
+        if (index == start) break ;
     }
-    printf("UPDATE FAILED.\n");
-}
+    printf("UPDATE FAILED: StudentID %d not found.\n", student_id) ;
     
 
 #endif 
