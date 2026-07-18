@@ -14,5 +14,5 @@ void execute_update(hash_header *table, int student_id, const char* field, float
         index = (index + 1) % table->capacity;
         if (index == start) break;
     }
-    printf("UPDATE FAILED.\n");
+    printf("UPDATE FAILED:(.\n");
 }
