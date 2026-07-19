@@ -1,5 +1,8 @@
 #define OP_IMPLEMENTATION
 #include"operation.h"
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 
 void menu(hash_header *t)
@@ -29,6 +32,16 @@ int main(void)
     printf("loaded %lu records\n", (unsigned long)table.count) ;
 
     menu(&table) ;
+    clock_t start, end;
+    double cpu_time;
+    
+    start = clock();
+    search(&table, 123456); 
+    
+    end = clock();
+    
+    cpu_time = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("Execution Time = %.6f seconds\n", cpu_time);
 
     free(table.row) ;
     return 0 ;
