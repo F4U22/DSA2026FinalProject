@@ -4,6 +4,8 @@
 #include<stdlib.h>
 #include<string.h>
 #include<dirent.h>
+#include<stdint.h>
+#include<math.h>
 #include<ctype.h>
 
 // all the constant definition will be put here
@@ -13,6 +15,9 @@
 #define MAX_DEPT_LEN 5
 #define INIT_TABLE_SIZE 1024
 #define MAX_LINE_LEN 256
+#define GOLDEN_RATIO_NUM 2654435769
+
+//define for macro if needed one
 #define NELEM(a) ((int)(sizeof(a) / sizeof(*(a))))
 
 // fields and sort direction
@@ -26,6 +31,9 @@ typedef struct {
     float gpa ;
     char dept[MAX_DEPT_LEN] ;
     int enroll_y ;
+    // this is use for robin hood probing 
+    unsigned char dfh ;
+
 } table_row ;
 
 typedef struct {
@@ -43,11 +51,19 @@ typedef struct {
 // all the fuction(declaration) for this work should be put here plz
 void openCSV(hash_header *table) ;
 int initTable(hash_header *table) ;
-int insert(hash_header *table, char *data) ;
+int insert(hash_header *table,char *data) ;
+uint32_t hashing(uint32_t id, int bits) ;
 
+//for filter and filter_sort command
 int field_from_name(const char *s) ;
 result_set filter(hash_header *t, int field, const char *value) ;
 result_set filter_sort(hash_header *t, int ffield, const char *value, int sfield, int dir) ;
+
+//for insertion and deletion and related func 
+void op_insert(hash_header *table) ;
+void op_delete(hash_header *table) ;
+void shiftBack(hash_header *table,int index, int next_index) ;
+
 
 
 // this allow for all the funcs be declare and define in one .h file
@@ -88,30 +104,74 @@ int field_from_name(const char *s)
 
 // ---- storage ---------------------------------------------------------------
 
+// init the table 
 int initTable(hash_header *table)
 {
-    table->capacity = INIT_TABLE_SIZE ;
-    table->count = 0 ;
-    table->row = malloc(table->capacity * sizeof(*table->row)) ;
-    return table->row ? 0 : -1 ;
+    if(table->capacity == 0) 
+    {
+        table->capacity = INIT_TABLE_SIZE ;
+        table->row = calloc(table->capacity,sizeof(*table->row)) ;
+    }else{
+        return -1 ;
+    }
+}
+
+//hashing algorithm for fibo hashing
+uint32_t hashing(uint32_t id,int bits) 
+{
+    if(bits >32 && bits < 0) return 0xFFFFFFFF ;
+
+    return ((id * (uint32_t)GOLDEN_RATIO_NUM) >> (32 - bits)) ;
 }
 
 // append one CSV record; grow when full
 int insert(hash_header *table, char *data)
 {
-    if (table->count >= table->capacity) {
-        table->capacity *= 2 ;
-        table->row = realloc(table->row, table->capacity * sizeof(*table->row)) ;
+    if (table->count >= (int)(table->capacity*0.7))
+    {
+        if(table->capacity == 0) table->capacity = INIT_TABLE_SIZE ;
+        else table->capacity *= 2 ;
+        table->row = realloc(table->row,table->capacity*sizeof(*table->row)) ;
     }
-    table_row *r = &table->row[table->count] ;
-    // width limits stop name/dept overrunning their buffers
-    int err = sscanf(data, "%d,%99[^,],%f,%4[^,],%d",
-                     &r->id, r->name, &r->gpa, r->dept, &r->enroll_y) ;
-    if (err < 5) return -1 ;
-    table->count++ ;
-    return 0 ;
+    table_row *temp = malloc(sizeof(table_row)) ;
+    int err = sscanf(data,"%d,%99[^,],%f,%4[^,],%d\n",&temp->id,temp->name,&temp->gpa,temp->dept,&temp->enroll_y) ;
+    if(err <5) return -1 ;
+    temp->dfh = 0 ;
+
+    size_t index = hashing(temp->id,(int)log2f(table->capacity)) ;
+    int insert_index = -1 ;
+    for(;;)
+    {
+        if(table->row[index].id != 0) 
+        {
+
+            if(table->row[index].dfh < temp->dfh)
+            {
+                //for tracking when it got inserted
+                if(insert_index == -1) insert_index = (int)index ;
+
+                table_row exchanger = *temp ;
+                *temp = table->row[index] ;
+                table->row[index] = exchanger ;
+            }
+
+        }else{
+
+            //for tracking when it got inserted
+            if(insert_index == -1) insert_index = (int)index ;
+
+            table->row[index] = *temp ;
+            table->count++ ;
+            break ;
+        }
+        temp->dfh++ ;
+        index = (index + 1) & (table->capacity -1) ;
+    }
+    free(temp) ;
+    return insert_index ;
 }
 
+//store stuff
 void openCSV(hash_header *table)
 {
     DIR *dir ;
@@ -156,10 +216,22 @@ void openCSV(hash_header *table)
     fs = fopen(fullpath,"r") ;
     if(fs == NULL) { printf("no file %s",fullpath) ; return ; }
 
-    fgets(read_buff,sizeof(read_buff),fs) ;   // skip header
-    for(char *data = fgets(read_buff,sizeof(read_buff),fs); data != NULL ;
-        data = fgets(read_buff,sizeof(read_buff),fs))
-        insert(table,data) ;
+
+    char *head = fgets(read_buff,sizeof(read_buff),fs) ;
+    if(strncmp(head,"StudentID,Name,GPA,Department,EnrollmentYear\n",strlen(head)) != 0)
+    {
+        printf("File potentially not in the wanted format check the table head\n") ;
+
+    }else{
+        size_t row_counter = 0 ;
+        for(char *data = fgets(read_buff,sizeof(read_buff),fs);data != NULL ; 
+            data = fgets(read_buff,sizeof(read_buff),fs))
+        {
+            row_counter++ ;
+            if(insert(table,data) == -1) printf("%zu:Potential missing field\n",row_counter) ;
+        }
+    }
+
 
     for(size_t k = 0 ; k < MAX_FILE_LEN; k++) free(file_list[k]) ;
     fclose(fs) ;
@@ -182,8 +254,11 @@ static int match(const table_row *r, int field, const char *value)
 result_set filter(hash_header *t, int field, const char *value)
 {
     result_set r = { malloc(t->count * sizeof(table_row)), 0 } ;
-    for (size_t i = 0 ; i < t->count ; i++)
-        if (match(&t->row[i], field, value))
+    for (size_t i = 0 ; i < t->capacity ; i++)
+
+        //add first condition to check for empty row should make it a little faster
+    
+        if (t->row[i].id != 0 && match(&t->row[i], field, value))
             r.items[r.count++] = t->row[i] ;
     return r ;
 }
@@ -242,7 +317,7 @@ static void print_row(const table_row *r)
 static void print_result(result_set *r)
 {
     for (size_t i = 0 ; i < r->count ; i++) print_row(&r->items[i]) ;
-    printf("(%lu rows)\n", (unsigned long)r->count) ;
+    printf("(%zu rows)\n", r->count) ;
     free(r->items) ;
 }
 
@@ -304,5 +379,105 @@ static void op_filter_sort(hash_header *t)
     print_result(&r) ;
 }
 
+//--insert operation and delete along with related func---------------------------------------------
+
+void shiftBack(hash_header *table,int index, int next_index) 
+{
+    // move data from row in front to the back row
+    // look a bit messy but should be fine
+    table->row[index].id = table->row[next_index].id ;
+    strcpy(table->row[index].name,table->row[next_index].name);
+    table->row[index].gpa = table->row[next_index].gpa ;
+    strcpy(table->row[index].dept,table->row[next_index].dept) ;
+    table->row[index].enroll_y = table->row[next_index].enroll_y ;
+    table->row[index].dfh = table->row[next_index].dfh - 1 ;
+}
+
+void op_insert(hash_header *table)
+{
+    char buffer_read[MAX_LINE_LEN] ;
+    char *data ;
+    int res_index ;
+
+    printf("Please insert row with the following format:id,name,gpa,dept,enroll year\nInput row:") ;
+
+    data = fgets(buffer_read,sizeof(buffer_read),stdin) ;
+    if(data == NULL) printf("ERROR something went wrong while try to read input\n") ;
+    
+
+    // if it return -1 error occur other than that should be fine
+    if((res_index = insert(table,data)) == -1) printf("Wrong input format\n") ;    
+    else{
+        printf("Insertion successful insert the following row at %d\n",res_index) ;
+        print_row(&table->row[res_index]) ;
+    }
+
+
+}
+
+void op_delete(hash_header *table)
+{
+    // this number should be fine
+    char input_buff[100] ;
+    int id,index,id_dfh = 0  ;
+    for (;;)
+    {
+        //for the strtol function
+        char *endptr ;
+
+        printf("Insert ID for deletion:") ;
+        char *id_char = fgets(input_buff,sizeof(input_buff),stdin) ;
+        if(id_char == NULL) printf("Some erros occur\n") ;
+        
+        id = (int)strtol(id_char,&endptr,10) ;
+
+        if(id_char == endptr) printf("No id input\n") ;
+        else if(*endptr != '\n') printf("Invalid input\n") ;
+        else break ;
+    }
+    
+    index = hashing(id,log2f(table->capacity)) ;
+    for(;;)
+    {
+        if(table->row[index].id == 0) 
+        {
+            printf("key not found\n") ;
+            return ;
+        }
+
+        // found it yea
+        if(table->row[index].id == id) 
+        {
+            printf("row found at %d\n",index) ;
+            print_row(&table->row[index]) ;
+            break ;
+        }
+
+        // robin hood early exit condition
+        if(table->row[index].dfh < id_dfh){
+            printf("key not found\n") ;
+            return ;
+        } 
+        index = (index+1) &(table->capacity -1) ;
+        id_dfh++ ;
+    }
+    for(;;)
+    {
+        int next_index ;
+        // delete the row (this should be enough)
+        table->row[index].id = 0 ;
+
+        next_index = (index+1) &(table->capacity -1) ;
+
+        if(table->row[next_index].dfh == 0 || table->row[next_index].id == 0) break;
+
+        shiftBack(table,index,next_index) ;
+
+        index = next_index ;
+        
+    }
+
+    table->count-- ;
+}
 
 #endif
