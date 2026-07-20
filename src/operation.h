@@ -52,6 +52,7 @@ typedef struct {
 void openCSV(hash_header *table) ;
 int initTable(hash_header *table) ;
 int insert(hash_header *table,char *data) ;
+int reinsert(hash_header *table,table_row *row) ;
 uint32_t hashing(uint32_t id, int bits) ;
 
 //for filter and filter_sort command
@@ -63,8 +64,13 @@ result_set filter_sort(hash_header *t, int ffield, const char *value, int sfield
 void op_insert(hash_header *table) ;
 void op_delete(hash_header *table) ;
 void shiftBack(hash_header *table,int index, int next_index) ;
+int convertInt(char *int_char,char end_char) ;
 
-
+//for update and search and related func
+int search(hash_header *table, int id) ;
+int update(hash_header *table, int index, char *data,int field) ;
+void op_search(hash_header *table) ;
+void op_update(hash_header *table) ;
 
 // this allow for all the funcs be declare and define in one .h file
 #if defined(OP_IMPLEMENTATION)
@@ -123,19 +129,58 @@ uint32_t hashing(uint32_t id,int bits)
 
     return ((id * (uint32_t)GOLDEN_RATIO_NUM) >> (32 - bits)) ;
 }
+//for reinsert stuff
+int reinsert(hash_header *table,table_row *row)
+{
+    row->dfh = 0 ;
+    size_t index = hashing(row->id,(int)log2f(table->capacity)) ;
+    for(;;)
+    {
+        if(table->row[index].id != 0) 
+        {
+
+            if(table->row[index].dfh < row->dfh)
+            {
+
+                table_row exchanger = *row ;
+                *row = table->row[index] ;
+                table->row[index] = exchanger ;
+            }
+
+        }else{
+
+
+            table->row[index] = *row ;
+            table->count++ ;
+            break ;
+        }
+        row->dfh++ ;
+        index = (index + 1) & (table->capacity -1) ;
+    }
+}
 
 // append one CSV record; grow when full
 int insert(hash_header *table, char *data)
 {
     if (table->count >= (int)(table->capacity*0.7))
     {
-        if(table->capacity == 0) table->capacity = INIT_TABLE_SIZE ;
-        else table->capacity *= 2 ;
-        table->row = realloc(table->row,table->capacity*sizeof(*table->row)) ;
+        int old_capacity = table->capacity ;
+        table_row *old_row = table->row ;
+
+        table->capacity = 2 *old_capacity ;
+        table->row = calloc(table->capacity, sizeof(*table->row));
+
+        table->count = 0 ;
+        for(int i = 0 ; i< old_capacity ;i++)
+        {
+            if(old_row[i].id != 0) reinsert(table,&old_row[i]) ;
+        }
+
+        free(old_row) ;
     }
     table_row *temp = malloc(sizeof(table_row)) ;
     int err = sscanf(data,"%d,%99[^,],%f,%4[^,],%d\n",&temp->id,temp->name,&temp->gpa,temp->dept,&temp->enroll_y) ;
-    if(err <5) return -1 ;
+    if(err <5) { free(temp); return -1 ; }
     temp->dfh = 0 ;
 
     size_t index = hashing(temp->id,(int)log2f(table->capacity)) ;
@@ -392,6 +437,18 @@ void shiftBack(hash_header *table,int index, int next_index)
     table->row[index].enroll_y = table->row[next_index].enroll_y ;
     table->row[index].dfh = table->row[next_index].dfh - 1 ;
 }
+// this convertion function convert str to int return -1 as error work
+// work in this case since all possible int are positive 
+// end_char for character that will be at the end when strtol read all the num
+int convertInt(char *int_char,char end_char) {
+    char *endptr ;
+    int val ;
+
+    val = (int)strtol(int_char,&endptr,10) ;
+    if(int_char == endptr || *endptr != end_char) return -1 ;
+    else  return val ;
+
+}
 
 void op_insert(hash_header *table)
 {
@@ -429,14 +486,13 @@ void op_delete(hash_header *table)
         char *id_char = fgets(input_buff,sizeof(input_buff),stdin) ;
         if(id_char == NULL) printf("Some erros occur\n") ;
         
-        id = (int)strtol(id_char,&endptr,10) ;
-
-        if(id_char == endptr) printf("No id input\n") ;
-        else if(*endptr != '\n') printf("Invalid input\n") ;
+        id = convertInt(id_char,'\n');
+        if(id == -1) printf("Invalid input\n") ;
         else break ;
     }
     
     index = hashing(id,log2f(table->capacity)) ;
+    // this loop is use to find the index to delete
     for(;;)
     {
         if(table->row[index].id == 0) 
@@ -461,6 +517,7 @@ void op_delete(hash_header *table)
         index = (index+1) &(table->capacity -1) ;
         id_dfh++ ;
     }
+    // this loop is use to delete and shift row
     for(;;)
     {
         int next_index ;
@@ -479,5 +536,128 @@ void op_delete(hash_header *table)
 
     table->count-- ;
 }
+//--section for search and update function and related func ----------------
+static const int SEARCH_FIELD[] = { F_ID, F_GPA, F_DEPT, F_YEAR } ;
+static const int UP_FIELD[] = {F_NAME, F_GPA, F_DEPT, F_YEAR } ;
+
+int search(hash_header *table, int id) 
+{
+    int index, dfh = 0 ;
+    index = hashing(id,(int)log2f(table->capacity)) ;
+    for(;;)
+    {
+        if(table->row[index].id == 0) return -1 ;
+
+        // found it yea
+        if(table->row[index].id == id) return index ;
+        
+
+        // robin hood probing exit condition
+        if(table->row[index].dfh < dfh) return -1 ;
+
+        index = (index + 1) & (table->capacity -1) ;
+        dfh++ ;
+    }
+}
+int update(hash_header *table, int index, char *data, int field) 
+{
+    int val ;
+    if(isdigit(*data)) 
+    {
+        if((val = convertInt(data,'\0')) == -1) { printf("Wrong num format\n");return -1 ; }
+    }
+    switch(field) 
+    {
+        case F_NAME: 
+            if(strlen(data) > (MAX_NAME_LEN -1)) {printf("Name too long\n"); return -1 ;} 
+            strcpy(table->row[index].name,data) ;
+
+        break ;
+        case F_GPA:
+            table->row[index].gpa = val ;
+
+        break ;
+        case F_DEPT:
+            if(strlen(data) > MAX_DEPT_LEN -1) {printf("dept name too long\n") ; return -1 ; }
+            strcpy(table->row[index].dept,data) ;
+
+        break ;
+        case F_YEAR:
+            table->row[index].enroll_y = val ;
+
+        break ;
+        default: 
+            printf("Unknown field\n") ;
+            return -1 ;
+
+        break ;
+    }
+    return 0 ;
+}
+
+//similar to filter func
+void op_search(hash_header *table)
+{
+    char value[MAX_LINE_LEN] ;
+    int id, index ;
+
+    int field = ask_field("Field", SEARCH_FIELD, NELEM(SEARCH_FIELD)) ;
+    if (field == F_NONE) return ;
+
+    printf("Search value: ") ;
+    if (!read_line(value, sizeof(value))) return ;
+
+    if(field == F_ID)
+    {
+
+        id = convertInt(value,'\0') ;
+
+        if(id == -1) {printf("Invalid input\n") ; return ;}
+        else index = search(table,id) ;
+
+        if(index >=0) 
+        {
+            printf("Found the record\n") ;
+            print_row(&table->row[index]) ;
+        }
+        else printf("StudentId not found\n") ;
+
+    }else{
+        result_set r = filter(table, field, trim(value)) ;
+        print_result(&r) ;
+    }
+}
+
+void op_update(hash_header *table) 
+{
+    char value[MAX_LINE_LEN], input_buff[100];
+    int id, index ;
+
+    for (;;)
+    {
+
+        printf("Insert ID for update:") ;
+        char *id_char = fgets(input_buff,sizeof(input_buff),stdin) ;
+        if(id_char == NULL) printf("Some erros occur\n") ;
+        
+        id = convertInt(id_char,'\n') ;
+
+        if(id == -1) printf("Invalid input\n") ;
+        else break ;
+    }
+    if((index = search(table,id)) == -1) {printf("NO id:%d\n",id) ; return ; }
+    else print_row(&table->row[index]) ;
+
+    int field = ask_field("Field", UP_FIELD, NELEM(UP_FIELD)) ;
+    if (field == F_NONE) return ;
+
+    printf("Change to: ") ;
+    if (!read_line(value, sizeof(value))) return ;
+
+    if(update(table,index,value,field) == -1) printf("Update fail\n") ;
+    else {printf("Update successful\n") ; print_row(&table->row[index]) ;}
+
+}
+
 
 #endif
