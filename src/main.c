@@ -29,7 +29,7 @@ void printSample(hash_header *table)
 {
     int printed = 0;
     size_t i = 0 ;
-    int print_val = ((int)(table->count*0.05) > printed) ? table->count*0.05:table->count ;
+    int print_val = ((int)(table->count*0.01) > printed) ? table->count*0.01:table->count ;
     printf("***Some sample %d records***\n",print_val) ;
     while(printed < print_val)
     {

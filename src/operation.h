@@ -5,8 +5,9 @@
 #include<string.h>
 #include<dirent.h>
 #include<stdint.h>
-#include<math.h>
 #include<ctype.h>
+#include<math.h>
+#include<time.h>
 
 // all the constant definition will be put here
 #define MAX_PATH_LEN 200
@@ -71,6 +72,11 @@ int search(hash_header *table, int id) ;
 int update(hash_header *table, int index, char *data,int field) ;
 void op_search(hash_header *table) ;
 void op_update(hash_header *table) ;
+
+
+// varible for compute time
+clock_t start,end ;
+double cpu_time ;
 
 // this allow for all the funcs be declare and define in one .h file
 #if defined(OP_IMPLEMENTATION)
@@ -405,8 +411,16 @@ static void op_filter(hash_header *t)
     if (f == F_NONE) return ;
     printf("Value: ") ;
     if (!read_line(value, sizeof(value))) return ;
+
+    start = clock() ;
+    
     result_set r = filter(t, f, trim(value)) ;
     print_result(&r) ;
+
+    end = clock() ;
+    cpu_time = (double)(end-start) / CLOCKS_PER_SEC ;
+    printf("Execution Time = %.6f seconds\n",cpu_time) ;
+
 }
 
 static void op_filter_sort(hash_header *t)
@@ -420,8 +434,16 @@ static void op_filter_sort(hash_header *t)
     if (s == F_NONE) return ;
     printf("Order (ASC/DESC): ") ;
     if (!read_line(order, sizeof(order))) return ;
+
+    start = clock() ;
+
     result_set r = filter_sort(t, f, trim(value), s, ieq(trim(order), "DESC") ? DESC : ASC) ;
     print_result(&r) ;
+
+    end = clock() ;
+    cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+    printf("Execution Time = %.6f seconds\n",cpu_time) ;
+
 }
 
 //--insert operation and delete along with related func---------------------------------------------
@@ -463,12 +485,16 @@ void op_insert(hash_header *table)
     
 
     // if it return -1 error occur other than that should be fine
-    if((res_index = insert(table,data)) == -1) printf("Wrong input format\n") ;    
+    start = clock() ;
+    if((res_index = insert(table,data)) == -1) {end = clock() ; printf("Wrong input format\n") ;} 
     else{
         printf("Insertion successful insert the following row at %d\n",res_index) ;
         print_row(&table->row[res_index]) ;
-    }
 
+    }
+    end = clock() ;
+    cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+    printf("Execution Time = %.6f seconds\n",cpu_time) ;
 
 }
 
@@ -490,7 +516,7 @@ void op_delete(hash_header *table)
         if(id == -1) printf("Invalid input\n") ;
         else break ;
     }
-    
+    start = clock() ;
     index = hashing(id,log2f(table->capacity)) ;
     // this loop is use to find the index to delete
     for(;;)
@@ -498,6 +524,11 @@ void op_delete(hash_header *table)
         if(table->row[index].id == 0) 
         {
             printf("key not found\n") ;
+
+            end = clock() ;
+            cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+            printf("Execution Time = %.6f seconds\n",cpu_time) ;
+
             return ;
         }
 
@@ -512,6 +543,11 @@ void op_delete(hash_header *table)
         // robin hood early exit condition
         if(table->row[index].dfh < id_dfh){
             printf("key not found\n") ;
+            
+            end = clock() ;
+            cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+            printf("Execution Time = %.6f seconds\n",cpu_time) ;
+
             return ;
         } 
         index = (index+1) &(table->capacity -1) ;
@@ -535,6 +571,11 @@ void op_delete(hash_header *table)
     }
 
     table->count-- ;
+
+    end = clock() ;
+    cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+    printf("Execution Time = %.6f seconds\n",cpu_time) ;
+
 }
 //--section for search and update function and related func ----------------
 static const int SEARCH_FIELD[] = { F_ID, F_GPA, F_DEPT, F_YEAR } ;
@@ -607,6 +648,7 @@ void op_search(hash_header *table)
     printf("Search value: ") ;
     if (!read_line(value, sizeof(value))) return ;
 
+    start = clock() ;
     if(field == F_ID)
     {
 
@@ -622,16 +664,25 @@ void op_search(hash_header *table)
         }
         else printf("StudentId not found\n") ;
 
+        end = clock() ;
+
     }else{
         result_set r = filter(table, field, trim(value)) ;
         print_result(&r) ;
+
+        end = clock() ;
     }
+
+    cpu_time = (double)(end - start) / CLOCKS_PER_SEC ;
+    printf("Execution Time = %.6f seconds\n",cpu_time) ;
 }
 
 void op_update(hash_header *table) 
 {
     char value[MAX_LINE_LEN], input_buff[100];
     int id, index ;
+    clock_t start_s, end_s ;
+    double cpu_time_s ;
 
     for (;;)
     {
@@ -645,17 +696,24 @@ void op_update(hash_header *table)
         if(id == -1) printf("Invalid input\n") ;
         else break ;
     }
+    start_s = clock() ;
     if((index = search(table,id)) == -1) {printf("NO id:%d\n",id) ; return ; }
     else print_row(&table->row[index]) ;
+    end_s = clock() ;
+    cpu_time_s = (double) (end - start) / CLOCKS_PER_SEC ;
 
     int field = ask_field("Field", UP_FIELD, NELEM(UP_FIELD)) ;
     if (field == F_NONE) return ;
 
     printf("Change to: ") ;
     if (!read_line(value, sizeof(value))) return ;
-
+    
+    start = clock() ;
     if(update(table,index,value,field) == -1) printf("Update fail\n") ;
     else {printf("Update successful\n") ; print_row(&table->row[index]) ;}
+    end = clock() ;
+    cpu_time = (double)(end -start) / CLOCKS_PER_SEC ;
+    printf("Execution Time %.6f seconds\n",cpu_time + cpu_time_s) ;
 
 }
 
