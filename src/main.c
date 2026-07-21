@@ -19,7 +19,12 @@ void menu(hash_header *t)
             case 4: op_delete(t) ;      break ;
             case 5: op_update(t) ;      break ;
             case 6: op_search(t) ;      break ;
-            case 0: return ;
+            case 0:
+                    char f_name[MAX_FILE_LEN] ;
+                    printf("Write file name(end with .csv):") ;
+                    scanf("%s",f_name) ;
+                    write_table_to_csv(t,f_name) ;
+                    return ;
             default: printf("invalid\n") ;
         }
     }

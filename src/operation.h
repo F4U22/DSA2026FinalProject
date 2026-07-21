@@ -73,6 +73,8 @@ int update(hash_header *table, int index, char *data,int field) ;
 void op_search(hash_header *table) ;
 void op_update(hash_header *table) ;
 
+// write the new csv
+int write_table_to_csv(const hash_header *table, const char *filename) ;
 
 // varible for compute time
 clock_t start,end ;
@@ -716,6 +718,46 @@ void op_update(hash_header *table)
     printf("Execution Time %.6f seconds\n",cpu_time + cpu_time_s) ;
 
 }
-
+int write_table_to_csv(const hash_header *table, const char *filename) {
+ 
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        printf("Fail to create and write to file") ;
+        return -1;
+    }
+ 
+    if (fprintf(fp, "StudentID,Name,GPA,Department,EnrollmentYear\r\n") < 0) {
+        printf("write_table_to_csv: fprintf header");
+        fclose(fp);
+        return -1;
+    }
+ 
+    size_t written = 0;
+    for (size_t i = 0; i < table->capacity; i++) {
+        const table_row *r = &table->row[i];
+ 
+        if (r->id == 0) {
+            continue;
+        }
+ 
+        if (fprintf(fp, "%d,%s,%g,%s,%d\r\n",
+                     r->id, r->name, r->gpa, r->dept, r->enroll_y) < 0) {
+            printf("write_table_to_csv: fprintf row");
+            fclose(fp);
+            return -1;
+        }
+        written++;
+    }
+ 
+    fclose(fp) ;
+ 
+    if (written != table->count) {
+        printf("write_table_to_csv: warning - wrote %zu rows but count=%zu\n",
+                written, table->count);
+        return -1 ;
+    }
+ 
+    return 0;
+}
 
 #endif
